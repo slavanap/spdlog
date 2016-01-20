@@ -1,27 +1,7 @@
-/*************************************************************************/
-/* spdlog - an extremely fast and easy to use c++11 logging library.     */
-/* Copyright (c) 2014 Gabi Melman.                                       */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
-
+//
+// Copyright(c) 2015 Gabi Melman.
+// Distributed under the MIT License (http://opensource.org/licenses/MIT)
+//
 //
 // spdlog usage example
 //
@@ -93,8 +73,9 @@ int main(int, char*[])
         size_t q_size = 1048576; //queue size must be power of 2
         spdlog::set_async_mode(q_size);
         auto async_file = spd::daily_logger_st("async_file_logger", "logs/async_log.txt");
-        async_file->info() << "This is async log.." << "Should be very fast!";
-        spdlog::drop_all(); //Close all loggers
+        for (int i = 0; i < 100; ++i)
+            async_file->info("Async message #{}", i);
+
         //
         // syslog example. linux only..
         //
@@ -103,7 +84,13 @@ int main(int, char*[])
         auto syslog_logger = spd::syslog_logger("syslog", ident, LOG_PID);
         syslog_logger->warn("This is warning that will end up in syslog. This is Linux only!");
 #endif
+
+        //
+        //Release and close all loggers
+        //
+        spdlog::drop_all();
     }
+
     catch (const spd::spdlog_ex& ex)
     {
         std::cout << "Log failed: " << ex.what() << std::endl;

@@ -1,28 +1,9 @@
-/*************************************************************************/
-/* spdlog - an extremely fast and easy to use c++11 logging library.     */
-/* Copyright (c) 2014 Gabi Melman.                                       */
-/*                                                                       */
-/* Permission is hereby granted, free of charge, to any person obtaining */
-/* a copy of this software and associated documentation files (the       */
-/* "Software"), to deal in the Software without restriction, including   */
-/* without limitation the rights to use, copy, modify, merge, publish,   */
-/* distribute, sublicense, and/or sell copies of the Software, and to    */
-/* permit persons to whom the Software is furnished to do so, subject to */
-/* the following conditions:                                             */
-/*                                                                       */
-/* The above copyright notice and this permission notice shall be        */
-/* included in all copies or substantial portions of the Software.       */
-/*                                                                       */
-/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,       */
-/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF    */
-/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.*/
-/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY  */
-/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,  */
-/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE     */
-/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                */
-/*************************************************************************/
-
+//
+// Copyright(c) 2015 Gabi Melman.
+// Distributed under the MIT License (http://opensource.org/licenses/MIT)
+//
 #pragma once
+
 #include<string>
 #include<cstdio>
 #include<ctime>
@@ -31,7 +12,7 @@
 # ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
 # endif
-# include <Windows.h>
+# include <windows.h>
 
 #ifdef __MINGW32__
 #include <share.h>
@@ -39,6 +20,7 @@
 
 #elif __linux__
 #include <sys/syscall.h> //Use gettid() syscall under linux to get thread id
+#include <sys/stat.h>
 #include <unistd.h>
 #else
 #include <thread>
@@ -62,6 +44,7 @@ inline spdlog::log_clock::time_point now()
     return std::chrono::time_point<log_clock, typename log_clock::duration>(
                std::chrono::duration_cast<typename log_clock::duration>(
                    std::chrono::seconds(ts.tv_sec) + std::chrono::nanoseconds(ts.tv_nsec)));
+
 
 #else
     return log_clock::now();
@@ -157,20 +140,52 @@ inline int fopen_s(FILE** fp, const std::string& filename, const char* mode)
     return *fp == nullptr;
 #endif
 
+}
+
+
+//Return if file exists
+inline bool file_exists(const std::string& filename)
+{
+#ifdef _WIN32
+    auto attribs = GetFileAttributesA(filename.c_str());
+    return (attribs != INVALID_FILE_ATTRIBUTES && !(attribs & FILE_ATTRIBUTE_DIRECTORY));
+#elif __linux__
+    struct stat buffer;
+    return (stat (filename.c_str(), &buffer) == 0);
+#else
+    auto *file = fopen(filename.c_str(), "r");
+    if (file != nullptr)
+    {
+        fclose(file);
+        return true;
+    }
+    return false;
+
+#endif
 
 }
 
-//Return utc offset in minutes or -1 on failure
+//Return utc offset in minutes or throw spdlog_ex on failure
 inline int utc_minutes_offset(const std::tm& tm = details::os::localtime())
 {
 
 #ifdef _WIN32
-    (void)tm; // avoid unused param warning
+#if _WIN32_WINNT < _WIN32_WINNT_WS08
+    TIME_ZONE_INFORMATION tzinfo;
+    auto rv = GetTimeZoneInformation(&tzinfo);
+#else
     DYNAMIC_TIME_ZONE_INFORMATION tzinfo;
     auto rv = GetDynamicTimeZoneInformation(&tzinfo);
-    if (!rv)
-        return -1;
-    return -1 * (tzinfo.Bias + tzinfo.DaylightBias);
+#endif
+    if (rv == TIME_ZONE_ID_INVALID)
+        throw spdlog::spdlog_ex("Failed getting timezone info. Last error: " + GetLastError());
+
+    int offset = -tzinfo.Bias;
+    if (tm.tm_isdst)
+        offset -= tzinfo.DaylightBias;
+    else
+        offset -= tzinfo.StandardBias;
+    return offset;
 #else
     return static_cast<int>(tm.tm_gmtoff / 60);
 #endif
