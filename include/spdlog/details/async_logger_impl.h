@@ -54,7 +54,8 @@ inline void spdlog::async_logger<defthread>::flush()
     _async_log_helper->flush();
 }
 
-inline void spdlog::async_logger::_set_formatter(spdlog::formatter_ptr msg_formatter)
+template <class defthread>
+inline void spdlog::async_logger<defthread>::_set_formatter(spdlog::formatter_ptr msg_formatter)
 {
     _formatter = msg_formatter;
     _async_log_helper->set_formatter(_formatter);

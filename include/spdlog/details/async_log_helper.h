@@ -225,7 +225,8 @@ inline void spdlog::details::async_log_helper<defthread>::log(const details::log
 }
 
 //Try to push and block until succeeded
-inline void spdlog::details::async_log_helper::push_msg(details::async_log_helper::async_msg&& new_msg)
+template <class defthread>
+inline void spdlog::details::async_log_helper<defthread>::push_msg(async_msg&& new_msg)
 {
     throw_if_bad_worker();
     if (!_q.enqueue(std::move(new_msg)) && _overflow_policy != async_overflow_policy::discard_log_msg)
@@ -243,12 +244,13 @@ inline void spdlog::details::async_log_helper::push_msg(details::async_log_helpe
 }
 
 template <class defthread>
-inline void spdlog::details<defthread>::async_log_helper::flush()
+inline void spdlog::details::async_log_helper<defthread>::flush()
 {
     push_msg(async_msg(async_msg_type::flush));
 }
 
-inline void spdlog::details::async_log_helper::worker_loop()
+template <class defthread>
+inline void spdlog::details::async_log_helper<defthread>::worker_loop()
 {
     try
     {
