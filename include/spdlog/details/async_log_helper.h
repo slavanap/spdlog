@@ -51,6 +51,7 @@ namespace spdlog
 namespace details
 {
 
+template<class defthread>
 class async_log_helper
 {
     // Async msg to move to/from the queue
@@ -151,7 +152,7 @@ private:
     const std::chrono::milliseconds _flush_interval_ms;
 
     // worker thread
-    std::thread _worker_thread;
+    defthread _worker_thread;
 
     // throw last worker thread exception or if worker thread is not active
     void throw_if_bad_worker();
@@ -177,7 +178,8 @@ private:
 ///////////////////////////////////////////////////////////////////////////////
 // async_sink class implementation
 ///////////////////////////////////////////////////////////////////////////////
-inline spdlog::details::async_log_helper::async_log_helper(formatter_ptr formatter, const std::vector<sink_ptr>& sinks, size_t queue_size, const async_overflow_policy overflow_policy, const std::function<void()>& worker_warmup_cb, const std::chrono::milliseconds& flush_interval_ms):
+template <class defthread>
+inline spdlog::details::async_log_helper<defthread>::async_log_helper(formatter_ptr formatter, const std::vector<sink_ptr>& sinks, size_t queue_size, const async_overflow_policy overflow_policy, const std::function<void()>& worker_warmup_cb, const std::chrono::milliseconds& flush_interval_ms):
     _formatter(formatter),
     _sinks(sinks),
     _q(queue_size),
@@ -189,7 +191,8 @@ inline spdlog::details::async_log_helper::async_log_helper(formatter_ptr formatt
 
 // Send to the worker thread termination message(level=off)
 // and wait for it to finish gracefully
-inline spdlog::details::async_log_helper::~async_log_helper()
+template <class defthread>
+inline spdlog::details::async_log_helper<defthread>::~async_log_helper()
 {
 
     try
@@ -203,7 +206,8 @@ inline spdlog::details::async_log_helper::~async_log_helper()
 
 
 //Try to push and block until succeeded
-inline void spdlog::details::async_log_helper::log(const details::log_msg& msg)
+template <class defthread>
+inline void spdlog::details::async_log_helper<defthread>::log(const details::log_msg& msg)
 {
     throw_if_bad_worker();
     async_msg new_msg(msg);
@@ -221,7 +225,8 @@ inline void spdlog::details::async_log_helper::log(const details::log_msg& msg)
 
 }
 
-inline void spdlog::details::async_log_helper::worker_loop()
+template <class defthread>
+inline void spdlog::details::async_log_helper<defthread>::worker_loop()
 {
     try
     {
@@ -242,7 +247,8 @@ inline void spdlog::details::async_log_helper::worker_loop()
 
 // process next message in the queue
 // return true if this thread should still be active (no msg with level::off was received)
-inline bool spdlog::details::async_log_helper::process_next_msg(log_clock::time_point& last_pop, log_clock::time_point& last_flush)
+template <class defthread>
+inline bool spdlog::details::async_log_helper<defthread>::process_next_msg(log_clock::time_point& last_pop, log_clock::time_point& last_flush)
 {
 
     async_msg incoming_async_msg;
@@ -269,7 +275,8 @@ inline bool spdlog::details::async_log_helper::process_next_msg(log_clock::time_
     return true;
 }
 
-inline void spdlog::details::async_log_helper::handle_flush_interval(log_clock::time_point& now, log_clock::time_point& last_flush)
+template <class defthread>
+inline void spdlog::details::async_log_helper<defthread>::handle_flush_interval(log_clock::time_point& now, log_clock::time_point& last_flush)
 {
     if (_flush_interval_ms != std::chrono::milliseconds::zero() && now - last_flush >= _flush_interval_ms)
     {
@@ -278,14 +285,16 @@ inline void spdlog::details::async_log_helper::handle_flush_interval(log_clock::
         now = last_flush = details::os::now();
     }
 }
-inline void spdlog::details::async_log_helper::set_formatter(formatter_ptr msg_formatter)
+template <class defthread>
+inline void spdlog::details::async_log_helper<defthread>::set_formatter(formatter_ptr msg_formatter)
 {
     _formatter = msg_formatter;
 }
 
 
 // sleep,yield or return immediatly using the time passed since last message as a hint
-inline void spdlog::details::async_log_helper::sleep_or_yield(const spdlog::log_clock::time_point& now, const spdlog::log_clock::time_point& last_op_time)
+template <class defthread>
+inline void spdlog::details::async_log_helper<defthread>::sleep_or_yield(const spdlog::log_clock::time_point& now, const spdlog::log_clock::time_point& last_op_time)
 {
     using std::chrono::milliseconds;
     using namespace std::this_thread;
@@ -309,7 +318,8 @@ inline void spdlog::details::async_log_helper::sleep_or_yield(const spdlog::log_
 }
 
 // throw if the worker thread threw an exception or not active
-inline void spdlog::details::async_log_helper::throw_if_bad_worker()
+template <class defthread>
+inline void spdlog::details::async_log_helper<defthread>::throw_if_bad_worker()
 {
     if (_last_workerthread_ex)
     {

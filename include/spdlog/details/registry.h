@@ -70,7 +70,7 @@ public:
 
 
         if (_async_mode)
-            new_logger = std::make_shared<async_logger>(logger_name, sinks_begin, sinks_end, _async_q_size, _overflow_policy, _worker_warmup_cb, _flush_interval_ms);
+            new_logger = std::make_shared<async_logger<> >(logger_name, sinks_begin, sinks_end, _async_q_size, _overflow_policy, _worker_warmup_cb, _flush_interval_ms);
         else
             new_logger = std::make_shared<logger>(logger_name, sinks_begin, sinks_end);
 

@@ -46,9 +46,10 @@ namespace spdlog
 
 namespace details
 {
-class async_log_helper;
+template <class defthread = std::thread> class async_log_helper;
 }
 
+template <class defthread = std::thread>
 class async_logger :public logger
 {
 public:
@@ -82,7 +83,7 @@ protected:
     void _set_pattern(const std::string& pattern) override;
 
 private:
-    std::unique_ptr<details::async_log_helper> _async_log_helper;
+    std::unique_ptr<details::async_log_helper<defthread> > _async_log_helper;
 };
 }
 
