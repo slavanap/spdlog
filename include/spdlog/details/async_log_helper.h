@@ -332,12 +332,28 @@ inline void spdlog::details::async_log_helper<defthread>::set_formatter(formatte
 }
 
 
+#ifdef _WIN32
+	using std::this_thread::yield;
+	template<typename _Rep, typename _Period>
+	inline void sleep_for(const std::chrono::duration<_Rep, _Period>& t) {
+		// `std::this_thread::sleep_for` in MinGW uses `nanosleep` that utilizes too much CPU.
+		// We use WinAPI `Sleep` function here instead.
+		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t).count();
+		if (ms >= 0) {
+			Sleep((ms < std::numeric_limits<DWORD>::max())
+				? static_cast<DWORD>(ms)
+				: std::numeric_limits<DWORD>::max());
+		}
+	}
+#else
+	using namespace std::this_thread;
+#endif
+
 // sleep,yield or return immediatly using the time passed since last message as a hint
 template <class defthread>
 inline void spdlog::details::async_log_helper<defthread>::sleep_or_yield(const spdlog::log_clock::time_point& now, const spdlog::log_clock::time_point& last_op_time)
 {
     using std::chrono::milliseconds;
-    using namespace std::this_thread;
 
     auto time_since_op = now - last_op_time;
 
