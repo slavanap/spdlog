@@ -29,8 +29,20 @@
 # example  files
 example/*
 !example/example.cpp
+!example/bench.cpp
 !example/utils.h
-!example/makefile
-!example/makefile.clang
+!example/Makefile*
+!example/example.sln
+!example/example.vcxproj
+!example/CMakeLists.txt
 
+# generated files
+generated
 
+# Cmake
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Makefile
+cmake_install.cmake
+install_manifest.txt

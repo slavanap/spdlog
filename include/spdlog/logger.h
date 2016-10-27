@@ -12,18 +12,16 @@
 // 2. Format the message using the formatter function
 // 3. Pass the formatted message to its sinks to performa the actual logging
 
-#include<vector>
-#include<memory>
-#include "sinks/base_sink.h"
-#include "common.h"
+#include <spdlog/sinks/base_sink.h>
+#include <spdlog/common.h>
+#include <spdlog/details/line_logger_fwd.h>
+
+#include <vector>
+#include <memory>
+#include <string>
 
 namespace spdlog
 {
-
-namespace details
-{
-class line_logger;
-}
 
 class logger
 {
@@ -42,6 +40,9 @@ public:
 
     const std::string& name() const;
     bool should_log(level::level_enum) const;
+
+    // automatically call flush() after a message of level log_level or higher is emitted
+    void flush_on(level::level_enum log_level);
 
     // logger.info(cppformat_string, arg1, arg2, arg3, ...) call style
     template <typename... Args> details::line_logger trace(const char* fmt, const Args&... args);
@@ -105,9 +106,11 @@ protected:
     std::string _name;
     std::vector<sink_ptr> _sinks;
     formatter_ptr _formatter;
-    std::atomic_int _level;
-
+    spdlog::level_t _level;
+    spdlog::level_t _flush_level;
 };
 }
 
-#include "./details/logger_impl.h"
+#include <spdlog/details/logger_impl.h>
+#include <spdlog/details/line_logger_impl.h>
+

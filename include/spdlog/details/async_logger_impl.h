@@ -8,8 +8,13 @@
 // Async Logger implementation
 // Use an async_sink (queue per logger) to perform the logging in a worker thread
 
-#include "./async_log_helper.h"
+#include <spdlog/details/async_log_helper.h>
+#include <spdlog/async_logger.h>
 
+#include <string>
+#include <functional>
+#include <chrono>
+#include <memory>
 
 template <class defthread>
 template<class It>
@@ -19,9 +24,10 @@ inline spdlog::async_logger<defthread>::async_logger(const std::string& logger_n
         size_t queue_size,
         const  async_overflow_policy overflow_policy,
         const std::function<void()>& worker_warmup_cb,
-        const std::chrono::milliseconds& flush_interval_ms) :
+        const std::chrono::milliseconds& flush_interval_ms,
+        const std::function<void()>& worker_teardown_cb) :
     logger(logger_name, begin, end),
-    _async_log_helper(new details::async_log_helper<defthread>(_formatter, _sinks, queue_size, overflow_policy, worker_warmup_cb, flush_interval_ms))
+    _async_log_helper(new details::async_log_helper<defthread>(_formatter, _sinks, queue_size, overflow_policy, worker_warmup_cb, flush_interval_ms, worker_teardown_cb))
 {
 }
 
@@ -31,8 +37,9 @@ inline spdlog::async_logger<defthread>::async_logger(const std::string& logger_n
         size_t queue_size,
         const  async_overflow_policy overflow_policy,
         const std::function<void()>& worker_warmup_cb,
-        const std::chrono::milliseconds& flush_interval_ms) :
-    async_logger(logger_name, sinks.begin(), sinks.end(), queue_size, overflow_policy, worker_warmup_cb, flush_interval_ms) {}
+        const std::chrono::milliseconds& flush_interval_ms,
+        const std::function<void()>& worker_teardown_cb) :
+    async_logger(logger_name, sinks.begin(), sinks.end(), queue_size, overflow_policy, worker_warmup_cb, flush_interval_ms, worker_teardown_cb) {}
 
 template <class defthread>
 inline spdlog::async_logger<defthread>::async_logger(const std::string& logger_name,
@@ -40,11 +47,12 @@ inline spdlog::async_logger<defthread>::async_logger(const std::string& logger_n
         size_t queue_size,
         const  async_overflow_policy overflow_policy,
         const std::function<void()>& worker_warmup_cb,
-        const std::chrono::milliseconds& flush_interval_ms) :
+        const std::chrono::milliseconds& flush_interval_ms,
+        const std::function<void()>& worker_teardown_cb) :
     async_logger(logger_name,
 {
     single_sink
-}, queue_size, overflow_policy, worker_warmup_cb, flush_interval_ms) {}
+}, queue_size, overflow_policy, worker_warmup_cb, flush_interval_ms, worker_teardown_cb) {}
 
 
 template <class defthread>

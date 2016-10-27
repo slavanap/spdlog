@@ -8,6 +8,7 @@ void prepare_logdir()
 #else
     auto rv = system("rm -f logs/*");
 #endif
+    (void)rv;
 }
 
 
@@ -42,4 +43,3 @@ std::size_t get_filesize(const std::string& filename)
 
     return ifs.tellg();
 }
-

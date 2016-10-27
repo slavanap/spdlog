@@ -14,17 +14,21 @@
 
 #pragma once
 
+#include <spdlog/common.h>
+#include <spdlog/sinks/sink.h>
+#include <spdlog/details/mpmc_bounded_q.h>
+#include <spdlog/details/log_msg.h>
+#include <spdlog/details/os.h>
+#include <spdlog/formatter.h>
+
 #include <chrono>
-#include <thread>
+#include <exception>
 #include <functional>
-
-#include "../common.h"
-#include "../sinks/sink.h"
-#include "./mpmc_bounded_q.h"
-#include "./log_msg.h"
-#include "./format.h"
-#include "./os.h"
-
+#include <memory>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 namespace spdlog
 {
@@ -118,7 +122,8 @@ public:
                      size_t queue_size,
                      const async_overflow_policy overflow_policy = async_overflow_policy::block_retry,
                      const std::function<void()>& worker_warmup_cb = nullptr,
-                     const std::chrono::milliseconds& flush_interval_ms = std::chrono::milliseconds::zero());
+                     const std::chrono::milliseconds& flush_interval_ms = std::chrono::milliseconds::zero(),
+                     const std::function<void()>& worker_teardown_cb = nullptr);
 
     void log(const details::log_msg& msg);
 
@@ -154,12 +159,15 @@ private:
     // auto periodic sink flush parameter
     const std::chrono::milliseconds _flush_interval_ms;
 
+    // worker thread teardown callback
+    const std::function<void()> _worker_teardown_cb;
+
     // worker thread
     defthread _worker_thread;
 
     void push_msg(async_msg&& new_msg);
-    // throw last worker thread exception or if worker thread is not active
 
+    // throw last worker thread exception or if worker thread is not active
     void throw_if_bad_worker();
 
     // worker thread main loop
@@ -188,7 +196,8 @@ inline spdlog::details::async_log_helper<defthread>::async_log_helper(
     size_t queue_size,
     const async_overflow_policy overflow_policy,
     const std::function<void()>& worker_warmup_cb,
-    const std::chrono::milliseconds& flush_interval_ms):
+    const std::chrono::milliseconds& flush_interval_ms,
+    const std::function<void()>& worker_teardown_cb):
     _formatter(formatter),
     _sinks(sinks),
     _q(queue_size),
@@ -197,6 +206,7 @@ inline spdlog::details::async_log_helper<defthread>::async_log_helper(
     _overflow_policy(overflow_policy),
     _worker_warmup_cb(worker_warmup_cb),
     _flush_interval_ms(flush_interval_ms),
+    _worker_teardown_cb(worker_teardown_cb),
     _worker_thread(&async_log_helper::worker_loop, this)
 {}
 
@@ -215,7 +225,7 @@ inline spdlog::details::async_log_helper<defthread>::~async_log_helper()
 }
 
 
-//Try to push and block until succeeded
+//Try to push and block until succeeded (if the policy is not to discard when the queue is full)
 template <class defthread>
 inline void spdlog::details::async_log_helper<defthread>::log(const details::log_msg& msg)
 {
@@ -224,7 +234,6 @@ inline void spdlog::details::async_log_helper<defthread>::log(const details::log
 
 }
 
-//Try to push and block until succeeded
 template <class defthread>
 inline void spdlog::details::async_log_helper<defthread>::push_msg(async_msg&& new_msg)
 {
@@ -258,6 +267,7 @@ inline void spdlog::details::async_log_helper<defthread>::worker_loop()
         auto last_pop = details::os::now();
         auto last_flush = last_pop;
         while(process_next_msg(last_pop, last_flush));
+        if (_worker_teardown_cb) _worker_teardown_cb();
     }
     catch (const std::exception& ex)
     {
@@ -270,7 +280,7 @@ inline void spdlog::details::async_log_helper<defthread>::worker_loop()
 }
 
 // process next message in the queue
-// return true if this thread should still be active (no msg with level::off was received)
+// return true if this thread should still be active (while no terminate msg was received)
 template <class defthread>
 inline bool spdlog::details::async_log_helper<defthread>::process_next_msg(log_clock::time_point& last_pop, log_clock::time_point& last_flush)
 {
@@ -293,11 +303,11 @@ inline bool spdlog::details::async_log_helper<defthread>::process_next_msg(log_c
             break;
 
         default:
-        incoming_async_msg.fill_log_msg(incoming_log_msg);
-        _formatter->format(incoming_log_msg);
-        for (auto &s : _sinks)
-            s->log(incoming_log_msg);
-    }
+            incoming_async_msg.fill_log_msg(incoming_log_msg);
+            _formatter->format(incoming_log_msg);
+            for (auto &s : _sinks)
+                s->log(incoming_log_msg);
+        }
         return true;
     }
 
@@ -313,6 +323,7 @@ inline bool spdlog::details::async_log_helper<defthread>::process_next_msg(log_c
     }
 }
 
+// flush all sinks if _flush_interval_ms has expired
 template <class defthread>
 inline void spdlog::details::async_log_helper<defthread>::handle_flush_interval(log_clock::time_point& now, log_clock::time_point& last_flush)
 {
@@ -349,28 +360,30 @@ inline void spdlog::details::async_log_helper<defthread>::set_formatter(formatte
 	using namespace std::this_thread;
 #endif
 
-// sleep,yield or return immediatly using the time passed since last message as a hint
+// spin, yield or sleep. use the time passed since last message as a hint
 template <class defthread>
 inline void spdlog::details::async_log_helper<defthread>::sleep_or_yield(const spdlog::log_clock::time_point& now, const spdlog::log_clock::time_point& last_op_time)
 {
     using std::chrono::milliseconds;
+    using std::chrono::microseconds;
 
     auto time_since_op = now - last_op_time;
 
-    // spin upto 1 ms
-    if (time_since_op <= milliseconds(1))
+    // spin upto 50 micros
+    if (time_since_op <= microseconds(50))
         return;
 
-    // yield upto 10ms
-    if (time_since_op <= milliseconds(10))
+    // yield upto 150 micros
+    if (time_since_op <= microseconds(100))
         return yield();
 
 
-    // sleep for half of duration since last op
-    if (time_since_op <= milliseconds(100))
-        return sleep_for(time_since_op / 2);
+    // sleep for 20 ms upto 200 ms
+    if (time_since_op <= milliseconds(200))
+        return sleep_for(milliseconds(20));
 
-    return sleep_for(milliseconds(100));
+    // sleep for 200 ms
+    return sleep_for(milliseconds(200));
 }
 
 // throw if the worker thread threw an exception or not active
