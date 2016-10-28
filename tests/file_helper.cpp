@@ -12,6 +12,7 @@ static void write_with_helper(file_helper &helper, size_t howmany)
     log_msg msg;
     msg.formatted << std::string(howmany, '1');
     helper.write(msg);
+    helper.flush();
 }
 
 
@@ -19,7 +20,7 @@ TEST_CASE("file_helper_filename", "[file_helper::filename()]]")
 {
     prepare_logdir();
 
-    file_helper helper(false);
+    file_helper helper;
     helper.open(target_filename);
     REQUIRE(helper.filename() == target_filename);
 }
@@ -29,12 +30,12 @@ TEST_CASE("file_helper_filename", "[file_helper::filename()]]")
 TEST_CASE("file_helper_size", "[file_helper::size()]]")
 {
     prepare_logdir();
-    auto expected_size = 123;
+    size_t expected_size = 123;
     {
-        file_helper helper(true);
+        file_helper helper;
         helper.open(target_filename);
         write_with_helper(helper, expected_size);
-        REQUIRE(helper.size() == expected_size);
+        REQUIRE(static_cast<size_t>(helper.size()) == expected_size);
     }
     REQUIRE(get_filesize(target_filename) == expected_size);
 }
@@ -44,7 +45,7 @@ TEST_CASE("file_helper_exists", "[file_helper::file_exists()]]")
 {
     prepare_logdir();
     REQUIRE(!file_helper::file_exists(target_filename));
-    file_helper helper(false);
+    file_helper helper;
     helper.open(target_filename);
     REQUIRE(file_helper::file_exists(target_filename));
 }
@@ -52,7 +53,7 @@ TEST_CASE("file_helper_exists", "[file_helper::file_exists()]]")
 TEST_CASE("file_helper_reopen", "[file_helper::reopen()]]")
 {
     prepare_logdir();
-    file_helper helper(true);
+    file_helper helper;
     helper.open(target_filename);
     write_with_helper(helper, 12);
     REQUIRE(helper.size() == 12);
@@ -63,8 +64,8 @@ TEST_CASE("file_helper_reopen", "[file_helper::reopen()]]")
 TEST_CASE("file_helper_reopen2", "[file_helper::reopen(false)]]")
 {
     prepare_logdir();
-    auto expected_size = 14;
-    file_helper helper(true);
+    size_t expected_size = 14;
+    file_helper helper;
     helper.open(target_filename);
     write_with_helper(helper, expected_size);
     REQUIRE(helper.size() == expected_size);

@@ -1,6 +1,7 @@
 # spdlog
 
-Very fast, header only, C++ logging library. [![Build Status](https://travis-ci.org/gabime/spdlog.svg?branch=master)](https://travis-ci.org/gabime/spdlog)
+Very fast, header only, C++ logging library. [![Build Status](https://travis-ci.org/gabime/spdlog.svg?branch=master)](https://travis-ci.org/gabime/spdlog)&nbsp; [![Build status](https://ci.appveyor.com/api/projects/status/d2jnxclg20vd0o50?svg=true)](https://ci.appveyor.com/project/gabime/spdlog)
+
 
 ## Install
 Just copy the source [folder](https://github.com/gabime/spdlog/tree/master/include/spdlog) to your build tree and use a C++11 compiler
@@ -9,13 +10,13 @@ Just copy the source [folder](https://github.com/gabime/spdlog/tree/master/inclu
  * Linux (gcc 4.8.1+, clang 3.5+)
  * Windows (visual studio 2013+, cygwin/mingw with g++ 4.9.1+)
  * Mac OSX (clang 3.5+)
+ * Solaris (gcc 5.2.0+)
+ * Android
 
 ##Features
 * Very fast - performance is the primary goal (see [benchmarks](#benchmarks) below).
-* Headers only.
-* No dependencies - just copy and use.
+* Headers only, just copy and use.
 * Feature rich [call style](#usage-example) using the excellent [fmt](https://github.com/fmtlib/fmt) library.
-* ostream call style is supported too.
 * Extremely fast asynchronous mode (optional) - using lockfree queues and other tricks to reach millions of calls/sec.
 * [Custom](https://github.com/gabime/spdlog/wiki/3.-Custom-formatting) formatting.
 * Multi/Single threaded loggers.
@@ -23,7 +24,7 @@ Just copy the source [folder](https://github.com/gabime/spdlog/tree/master/inclu
     * Rotating log files.
     * Daily log files.
     * Console logging (colors supported).
-    * Linux syslog.
+    * syslog.
     * Easily extendable with custom log targets  (just implement a single function in the [sink](include/spdlog/sinks/sink.h) interface).
 * Severity based filtering - threshold levels can be modified in runtime as well as in compile time.
 
@@ -57,107 +58,148 @@ Time needed to log 1,000,000 lines in asynchronous mode, i.e. the time it takes 
 
 ## Usage Example
 ```c++
-#include <iostream>
+
 #include "spdlog/spdlog.h"
 
-int main(int, char* [])
+#include <iostream>
+#include <memory>
+
+void async_example();
+void syslog_example();
+void user_defined_example();
+void err_handler_example();
+
+namespace spd = spdlog;
+int main(int, char*[])
 {
-    namespace spd = spdlog;
     try
     {
-        // console logger (multithreaded and with color)
-        auto console = spd::stdout_logger_mt("console", true);
-        console->info("Welcome to spdlog!") ;
-        console->info("An info message example {}..", 1);
-        console->info() << "Streams are supported too  " << 1;
+        // Console logger with color
+        auto console = spd::stdout_color_mt("console");
+        console->info("Welcome to spdlog!");
+        console->error("Some error message with arg{}..", 1);
 
-        //Formatting examples
-        console->info("Easy padding in numbers like {:08d}", 12);
-        console->info("Support for int: {0:d};  hex: {0:x};  oct: {0:o}; bin: {0:b}", 42);
+        // Formatting examples
+        console->warn("Easy padding in numbers like {:08d}", 12);
+        console->critical("Support for int: {0:d};  hex: {0:x};  oct: {0:o}; bin: {0:b}", 42);
         console->info("Support for floats {:03.2f}", 1.23456);
         console->info("Positional args are {1} {0}..", "too", "supported");
-
         console->info("{:<30}", "left aligned");
-        console->info("{:>30}", "right aligned");
-        console->info("{:^30}", "centered");
-
-        //
-        // Runtime log levels
-        //
-        spd::set_level(spd::level::info); //Set global log level to info
-        console->debug("This message shold not be displayed!");
-        console->set_level(spd::level::debug); // Set specific logger's log level
-        console->debug("Now it should..");
         
-        //
-        // Create a basic multithreaded file logger (or "basic_logger_st" for single threaded logger)
-        //
+
+        spd::get("console")->info("loggers can be retrieved from a global registry using the spdlog::get(logger_name) function");
+        
+        // Create basic file logger (not rotated)
         auto my_logger = spd::basic_logger_mt("basic_logger", "logs/basic.txt");
         my_logger->info("Some log message");
 
-        //
         // Create a file rotating logger with 5mb size max and 3 rotated files
-        //
         auto rotating_logger = spd::rotating_logger_mt("some_logger_name", "logs/mylogfile", 1048576 * 5, 3);
-        for(int i = 0; i < 10; ++i)
-		      rotating_logger->info("{} * {} equals {:>10}", i, i, i*i);
+        for (int i = 0; i < 10; ++i)
+            rotating_logger->info("{} * {} equals {:>10}", i, i, i*i);
 
-        //
         // Create a daily logger - a new file is created every day on 2:30am
-        //
         auto daily_logger = spd::daily_logger_mt("daily_logger", "logs/daily", 2, 30);
+        // trigger flush if the log severity is error or higher
+        daily_logger->flush_on(spd::level::err);
+        daily_logger->info(123.44);
 
-        //
         // Customize msg format for all messages
-        //
         spd::set_pattern("*** [%H:%M:%S %z] [thread %t] %v ***");
         rotating_logger->info("This is another message with custom format");
 
-        spd::get("console")->info("loggers can be retrieved from a global registry using the spdlog::get(logger_name) function");
 
-        //
-        // Compile time debug or trace macros.
-        // Enabled #ifdef SPDLOG_DEBUG_ON or #ifdef SPDLOG_TRACE_ON
-        //
+		// Runtime log levels
+		spd::set_level(spd::level::info); //Set global log level to info
+		console->debug("This message shold not be displayed!");
+		console->set_level(spd::level::debug); // Set specific logger's log level
+		console->debug("This message shold be displayed..");
+
+        // Compile time log levels
+        // define SPDLOG_DEBUG_ON or SPDLOG_TRACE_ON
         SPDLOG_TRACE(console, "Enabled only #ifdef SPDLOG_TRACE_ON..{} ,{}", 1, 3.23);
         SPDLOG_DEBUG(console, "Enabled only #ifdef SPDLOG_DEBUG_ON.. {} ,{}", 1, 3.23);
 
-        //
         // Asynchronous logging is very fast..
         // Just call spdlog::set_async_mode(q_size) and all created loggers from now on will be asynchronous..
-        //
-        size_t q_size = 8192; //queue size must be power of 2
-        spdlog::set_async_mode(q_size);
-        auto async_file= spd::daily_logger_st("async_file_logger", "logs/async_log.txt");
-        async_file->info() << "This is async log.." << "Should be very fast!";
+        async_example();
 
-        //
-        // syslog example. linux only..
-        //
-        #ifdef __linux__
-        std::string ident = "spdlog-example";
-        auto syslog_logger = spd::syslog_logger("syslog", ident, LOG_PID);
-        syslog_logger->warn("This is warning that will end up in syslog. This is Linux only!");
-        #endif
-                
+        // syslog example. linux/osx only
+        syslog_example();
+
+        // android example. compile with NDK
+        android_example();
+
+        // Log user-defined types example
+        user_defined_example();
+
+        // Change default log error handler
+        err_handler_example();
+
+        // Apply a function on all registered loggers
+        spd::apply_all([&](std::shared_ptr<spdlog::logger> l)
+        {
+            l->info("End of example.");
+        });
+
+        // Release and close all loggers
+        spdlog::drop_all();
     }
+    // Exceptions will only be thrown upon failed logger or sink construction (not during logging)
     catch (const spd::spdlog_ex& ex)
     {
-        std::cout << "Log failed: " << ex.what() << std::endl;
+        std::cout << "Log init failed: " << ex.what() << std::endl;
+        return 1;
     }
 }
 
-
-// Example of user defined class with operator<<
-class some_class {};
-std::ostream& operator<<(std::ostream& os, const some_class& c) { return os << "some_class"; }
-
-void custom_class_example()
+void async_example()
 {
-    some_class c;
-    spdlog::get("console")->info("custom class with operator<<: {}..", c);
-    spdlog::get("console")->info() << "custom class with operator<<: " << c << "..";
+    size_t q_size = 4096; //queue size must be power of 2
+    spdlog::set_async_mode(q_size);
+    auto async_file = spd::daily_logger_st("async_file_logger", "logs/async_log.txt");
+    for (int i = 0; i < 100; ++i)
+        async_file->info("Async message #{}", i);
 }
+
+//syslog example
+void syslog_example()
+{
+#ifdef SPDLOG_ENABLE_SYSLOG 
+    std::string ident = "spdlog-example";
+    auto syslog_logger = spd::syslog_logger("syslog", ident, LOG_PID);
+    syslog_logger->warn("This is warning that will end up in syslog..");
+#endif
+}
+
+// user defined types logging by implementing operator<<
+struct my_type
+{
+    int i;
+    template<typename OStream>
+    friend OStream& operator<<(OStream& os, const my_type &c)
+    {
+        return os << "[my_type i="<<c.i << "]";
+    }
+};
+
+#include <spdlog/fmt/ostr.h> // must be included
+void user_defined_example()
+{
+    spd::get("console")->info("user defined type: {}", my_type { 14 });
+}
+
+//
+//custom error handler
+//
+void err_handler_example()
+{	
+	spdlog::set_error_handler([](const std::string& msg) {
+		std::cerr << "my err handler: " << msg << std::endl;
+	}); 
+	// (or logger->set_error_handler(..) to set for specific logger)
+}
+
 ```
 
 ## Documentation

@@ -1,8 +1,18 @@
-# Compiled Object files
+# Auto generated files
 *.slo
 *.lo
 *.o
 *.obj
+*.suo
+*.tlog
+*.ilk
+*.log
+*.pdb
+*.idb
+*.iobj
+*.ipdb
+*.opensdf
+*.sdf
 
 # Compiled Dynamic libraries
 *.so
@@ -35,6 +45,8 @@ example/*
 !example/example.sln
 !example/example.vcxproj
 !example/CMakeLists.txt
+!example/multisink.cpp
+!example/jni
 
 # generated files
 generated
@@ -46,3 +58,7 @@ CMakeScripts
 Makefile
 cmake_install.cmake
 install_manifest.txt
+/tests/tests.VC.VC.opendb
+/tests/tests.VC.db
+/tests/tests
+/tests/logs/file_helper_test.txt

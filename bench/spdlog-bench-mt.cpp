@@ -28,7 +28,7 @@ int main(int argc, char* argv[])
     logger->set_pattern("[%Y-%b-%d %T.%e]: %v");
 
     std::atomic<int > msg_counter {0};
-    vector<thread> threads;
+    std::vector<thread> threads;
 
     for (int t = 0; t < thread_count; ++t)
     {
@@ -38,7 +38,7 @@ int main(int argc, char* argv[])
             {
                 int counter = ++msg_counter;
                 if (counter > howmany) break;
-                logger->info() << "spdlog message #" << counter << ": This is some text for your pleasure";
+                logger->info("spdlog message #{}: This is some text for your pleasure", counter);
             }
         }));
     }

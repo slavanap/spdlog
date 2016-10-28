@@ -68,7 +68,7 @@ async_msg(async_msg&& other) SPDLOG_NOEXCEPT:
         {}
 
         async_msg(async_msg_type m_type) :msg_type(m_type)
-        {};
+        {}
 
         async_msg& operator=(async_msg&& other) SPDLOG_NOEXCEPT
         {
@@ -87,21 +87,22 @@ async_msg(async_msg&& other) SPDLOG_NOEXCEPT:
 
         // construct from log_msg
         async_msg(const details::log_msg& m) :
-            logger_name(m.logger_name),
             level(m.level),
             time(m.time),
             thread_id(m.thread_id),
             txt(m.raw.data(), m.raw.size()),
             msg_type(async_msg_type::log)
-        {}
-
+        {
+#ifndef SPDLOG_NO_NAME
+            logger_name = *m.logger_name;
+#endif
+        }
 
 
         // copy into log_msg
         void fill_log_msg(log_msg &msg)
         {
-            msg.clear();
-            msg.logger_name = logger_name;
+            msg.logger_name = &logger_name;
             msg.level = level;
             msg.time = time;
             msg.thread_id = thread_id;
@@ -120,6 +121,7 @@ public:
     async_log_helper(formatter_ptr formatter,
                      const std::vector<sink_ptr>& sinks,
                      size_t queue_size,
+                     const log_err_handler err_handler,
                      const async_overflow_policy overflow_policy = async_overflow_policy::block_retry,
                      const std::function<void()>& worker_warmup_cb = nullptr,
                      const std::chrono::milliseconds& flush_interval_ms = std::chrono::milliseconds::zero(),
@@ -132,7 +134,7 @@ public:
 
     void set_formatter(formatter_ptr);
 
-    void flush();
+    void flush(bool wait_for_q);
 
 
 private:
@@ -142,13 +144,12 @@ private:
     // queue of messages to log
     q_type _q;
 
+    log_err_handler _err_handler;
+
     bool _flush_requested;
 
     bool _terminate_requested;
 
-
-    // last exception thrown from the worker thread
-    std::shared_ptr<spdlog_ex> _last_workerthread_ex;
 
     // overflow policy
     const async_overflow_policy _overflow_policy;
@@ -167,9 +168,6 @@ private:
 
     void push_msg(async_msg&& new_msg);
 
-    // throw last worker thread exception or if worker thread is not active
-    void throw_if_bad_worker();
-
     // worker thread main loop
     void worker_loop();
 
@@ -181,6 +179,9 @@ private:
 
     // sleep,yield or return immediatly using the time passed since last message as a hint
     static void sleep_or_yield(const spdlog::log_clock::time_point& now, const log_clock::time_point& last_op_time);
+
+    // wait until the queue is empty
+    void wait_empty_q();
 
 };
 }
@@ -194,6 +195,7 @@ inline spdlog::details::async_log_helper<defthread>::async_log_helper(
     formatter_ptr formatter,
     const std::vector<sink_ptr>& sinks,
     size_t queue_size,
+    log_err_handler err_handler,
     const async_overflow_policy overflow_policy,
     const std::function<void()>& worker_warmup_cb,
     const std::chrono::milliseconds& flush_interval_ms,
@@ -201,6 +203,7 @@ inline spdlog::details::async_log_helper<defthread>::async_log_helper(
     _formatter(formatter),
     _sinks(sinks),
     _q(queue_size),
+    _err_handler(err_handler),
     _flush_requested(false),
     _terminate_requested(false),
     _overflow_policy(overflow_policy),
@@ -237,7 +240,6 @@ inline void spdlog::details::async_log_helper<defthread>::log(const details::log
 template <class defthread>
 inline void spdlog::details::async_log_helper<defthread>::push_msg(async_msg&& new_msg)
 {
-    throw_if_bad_worker();
     if (!_q.enqueue(std::move(new_msg)) && _overflow_policy != async_overflow_policy::discard_log_msg)
     {
         auto last_op_time = details::os::now();
@@ -252,10 +254,13 @@ inline void spdlog::details::async_log_helper<defthread>::push_msg(async_msg&& n
 
 }
 
+// optionally wait for the queue be empty and request flush from the sinks
 template <class defthread>
-inline void spdlog::details::async_log_helper<defthread>::flush()
+inline void spdlog::details::async_log_helper<defthread>::flush(bool wait_for_q)
 {
     push_msg(async_msg(async_msg_type::flush));
+    if(wait_for_q)
+        wait_empty_q(); //return only make after the above flush message was processed
 }
 
 template <class defthread>
@@ -269,13 +274,13 @@ inline void spdlog::details::async_log_helper<defthread>::worker_loop()
         while(process_next_msg(last_pop, last_flush));
         if (_worker_teardown_cb) _worker_teardown_cb();
     }
-    catch (const std::exception& ex)
+    catch (const std::exception &ex)
     {
-        _last_workerthread_ex = std::make_shared<spdlog_ex>(std::string("async_logger worker thread exception: ") + ex.what());
+        _err_handler(ex.what());
     }
     catch (...)
     {
-        _last_workerthread_ex = std::make_shared<spdlog_ex>("async_logger worker thread exception");
+        _err_handler("Unknown exception");
     }
 }
 
@@ -286,7 +291,7 @@ inline bool spdlog::details::async_log_helper<defthread>::process_next_msg(log_c
 {
 
     async_msg incoming_async_msg;
-    log_msg incoming_log_msg;
+
 
     if (_q.dequeue(incoming_async_msg))
     {
@@ -303,10 +308,16 @@ inline bool spdlog::details::async_log_helper<defthread>::process_next_msg(log_c
             break;
 
         default:
+            log_msg incoming_log_msg;
             incoming_async_msg.fill_log_msg(incoming_log_msg);
             _formatter->format(incoming_log_msg);
             for (auto &s : _sinks)
-                s->log(incoming_log_msg);
+            {
+                if(s->should_log( incoming_log_msg.level))
+                {
+                    s->log(incoming_log_msg);
+                }
+            }
         }
         return true;
     }
@@ -319,7 +330,6 @@ inline bool spdlog::details::async_log_helper<defthread>::process_next_msg(log_c
         handle_flush_interval(now, last_flush);
         sleep_or_yield(now, last_pop);
         return !_terminate_requested;
-
     }
 }
 
@@ -344,11 +354,11 @@ inline void spdlog::details::async_log_helper<defthread>::set_formatter(formatte
 
 
 #ifdef _WIN32
+	// `std::this_thread::sleep_for` in MinGW uses `nanosleep` that utilizes too much CPU.
+	// We use WinAPI `Sleep` function here instead.
 	using std::this_thread::yield;
 	template<typename _Rep, typename _Period>
 	inline void sleep_for(const std::chrono::duration<_Rep, _Period>& t) {
-		// `std::this_thread::sleep_for` in MinGW uses `nanosleep` that utilizes too much CPU.
-		// We use WinAPI `Sleep` function here instead.
 		auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t).count();
 		if (ms >= 0) {
 			Sleep((ms < std::numeric_limits<DWORD>::max())
@@ -386,16 +396,18 @@ inline void spdlog::details::async_log_helper<defthread>::sleep_or_yield(const s
     return sleep_for(milliseconds(200));
 }
 
-// throw if the worker thread threw an exception or not active
+// wait for the queue to be empty
 template <class defthread>
-inline void spdlog::details::async_log_helper<defthread>::throw_if_bad_worker()
+inline void spdlog::details::async_log_helper<defthread>::wait_empty_q()
 {
-    if (_last_workerthread_ex)
+    auto last_op = details::os::now();
+    while (_q.approx_size() > 0)
     {
-        auto ex = std::move(_last_workerthread_ex);
-        throw *ex;
+        sleep_or_yield(details::os::now(), last_op);
     }
+
 }
+
 
 
 
